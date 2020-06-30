@@ -1,4 +1,5 @@
 # ledger-app-libonomy
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 This is currently a work in progress and it should be highlighted here,due to the upcoming updates the library structure is subjected to change .
 
 This is Nano Ledger S implementation of the libonomy wallet.

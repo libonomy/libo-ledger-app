@@ -1,0 +1,18 @@
+Key.ed25519 max_size:32
+Key.RSA_3072 max_size:32
+Key.ECDSA_384 max_size:97
+
+Signature.contract max_size:32
+Signature.ed25519 max_size:32
+Signature.RSA_3072 max_size:32
+Signature.ECDSA_384 max_size:97
+
+SignaturePair.contract max_size:32
+SignaturePair.ed25519 max_size:32
+SignaturePair.RSA_3072 max_size:32
+SignaturePair.ECDSA_384 max_size:97
+
+TransferList.accountAmounts max_count:2
+TransactionBody.memo max_size:128
+Transaction.bodyBytes max_size:1024
+

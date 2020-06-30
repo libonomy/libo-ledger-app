@@ -1,0 +1,325 @@
+syntax = "proto3";
+
+import "wrappers.proto";
+
+message ShardID {
+    int64 shardNum = 1; //the shard number (nonnegative)
+}
+
+/* The ID for a realm. Within a given shard, every realm has a unique ID. Each account, file, and contract instance belongs to exactly one realm. */
+message RealmID {
+    int64 shardNum = 1; //The shard number (nonnegative)
+    int64 realmNum = 2; //The realm number (nonnegative)
+}
+
+/* The ID for an a cryptocurrency account  */
+message AccountID {
+    int64 shardNum = 1; //The shard number (nonnegative)
+    int64 realmNum = 2; //The realm number (nonnegative)
+    int64 accountNum = 3; //A nonnegative account number unique within its realm
+}
+
+/* The ID for a file  */
+message FileID {
+    int64 shardNum = 1; //The shard number (nonnegative)
+    int64 realmNum = 2; //The realm number (nonnegative)
+    int64 fileNum = 3; //A nonnegative File number unique within its realm
+}
+
+/* The ID for a smart contract instance  */
+message ContractID {
+    int64 shardNum = 1; //The shard number (nonnegative)
+    int64 realmNum = 2; //The realm number (nonnegative)
+    int64 contractNum = 3; //A nonnegative number unique within its realm
+}
+
+/* The ID for a transaction. This is used for retrieving receipts and records for a transaction, for appending to a file right after creating it, for instantiating a smart contract with bytecode in a file just created, and internally by the network for detecting when duplicate transactions are submitted. A user might get a transaction processed faster by submitting it to N nodes, each with a different node account, but all with the same TransactionID. Then, the transaction will take effect when the first of all those nodes submits the transaction and it reaches consensus. The other transactions will not take effect. So this could make the transaction take effect faster, if any given node might be slow. However, the full transaction fee is charged for each transaction, so the total fee is N times as much if the transaction is sent to N nodes. */
+message TransactionID {
+    Timestamp transactionValidStart = 1; // The transaction is invalid if consensusTimestamp < transactionID.transactionStartValid
+    AccountID accountID = 2; //The Account ID that paid for this transaction
+}
+
+/* A Key can be a public key from one of the three supported systems (ed25519, RSA-3072,  ECDSA with p384). Or, it can be the ID of a smart contract instance, which is authorized to act as if it had a key. If an account has an ed25519 key associated with it, then the corresponding private key must sign any transaction to transfer cryptocurrency out of it. And similarly for RSA and ECDSA.
+ *
+ * A Key can be a smart contract ID, which means that smart contract is to authorize operations as if it had signed with a key that it owned. The smart contract doesn't actually have a key, and  doesn't actually sign a transaction. But it's as if a virtual transaction were created, and the smart contract signed it with a private key.
+ *
+ * A key can be a "threshold key", which means a list of M keys, any N of which must sign in order for the threshold signature to be considered valid. The keys within a threshold signature may themselves be threshold signatures, to allow complex signature requirements.
+ *
+ * A Key can be a list of keys. Their use is dependent on context. For example, a Libonomy file is created with a list of keys, where all of them must sign a transaction to create or modify the file, but only one of them is needed to sign a transaction to delete the file. So it's a single list that sometimes acts as a 1-of-M threshold key, and sometimes acts as an M-of-M threshold key.
+ *
+ * A Key can contain a ThresholdKey or KeyList, which in turn contain a Key, so this mutual recursion would allow nesting arbitrarily deep. A ThresholdKey which contains a list of primitive keys (e.g., ed25519) has 3 levels: ThresholdKey -> KeyList -> Key. A KeyList which contains several primitive keys (e.g., ed25519) has 2 levels: KeyList -> Key. A Key with 2 levels of nested ThresholdKeys has 7 levels: Key -> ThresholdKey -> KeyList -> Key -> ThresholdKey -> KeyList -> Key.
+ *
+ * Each Key should not have more than 46 levels, which implies 15 levels of nested ThresholdKeys.
+ */
+message Key {
+    oneof key {
+        ContractID contractID = 1; // smart contract instance that is authorized as if it had signed with a key
+        bytes ed25519 = 2; // ed25519 public key bytes
+        bytes RSA_3072 = 3; //RSA-3072 public key bytes
+        bytes ECDSA_384 = 4; //ECDirectorDSA with the p-384 curve public key bytes
+        ThresholdKey thresholdKey = 5; // a threshold N followed by a list of M keys, any N of which are required to form a valid signature
+        KeyList keyList = 6; // A list of Keys of the Key type.
+    }
+}
+
+/* A set of public keys that are used together to form a threshold signature. If the threshold is N and there are M keys, then this is an N of M threshold signature. If an account is associated with ThresholdKeys, then a transaction to move cryptocurrency out of it must be signed by a list of M signatures, where at most M-N of them are blank, and the other at least N of them are valid signatures corresponding to at least N of the public keys listed here. */
+message ThresholdKey {
+    uint32 threshold = 1; // A valid signature set must have at least this many signatures
+    KeyList keys = 2; // List of all the keys that can sign
+}
+
+/* A list of keys */
+message KeyList {
+    repeated Key keys = 1; // list of keys
+}
+
+/* A Signature corresponding to a Key. It is a sequence of bytes holding a public key signature from one of the three supported systems (ed25519, RSA-3072,  ECDSA with p384). Or, it can be a list of signatures corresponding to a single threshold key. Or, it can be the ID of a smart contract instance, which is authorized to act as if it had a key. If an account has an ed25519 key associated with it, then the corresponding private key must sign any transaction to transfer cryptocurrency out of it. If it has a smart contract ID associated with it, then that smart contract is allowed to transfer cryptocurrency out of it. The smart contract doesn't actually have a key, and  doesn't actually sign a transaction. But it's as if a virtual transaction were created, and the smart contract signed it with a private key. A key can also be a "threshold key", which means a list of M keys, any N of which must sign in order for the threshold signature to be considered valid. The keys within a threshold signature may themselves be threshold signatures, to allow complex signature requirements (this nesting is not supported in the currently, but will be supported in a future version of API). If a Signature message is missing the "signature" field, then this is considered to be a null signature. That is useful in cases such as threshold signatures, where some of the signatures can be null.
+ * The definition of Key uses mutual recursion, so it allows nesting that is arbitrarily deep. But the current API only accepts Key messages up to 3 levels deep, such as a list of threshold keys, each of which is a list of primitive keys. Therefore, the matching Signature will have the same limitation. This restriction may be relaxed in future versions of the API, to allow deeper nesting.
+ * This message is deprecated and succeeded by SignaturePair and SignatureMap messages. 
+ */
+message Signature {
+    option deprecated = true;
+    oneof signature {
+        bytes contract = 1; // smart contract virtual signature (always length zero)
+        bytes ed25519 = 2; // ed25519 signature bytes
+        bytes RSA_3072 = 3; //RSA-3072 signature bytes
+        bytes ECDSA_384 = 4; //ECDSA p-384 signature bytes
+        ThresholdSignature thresholdSignature = 5; // A list of signatures for a single N-of-M threshold Key. This must be a list of exactly M signatures, at least N of which are non-null.
+        SignatureList signatureList = 6; // A list of M signatures, each corresponding to a Key in a KeyList of the same length.
+    }
+}
+
+/* A signature corresponding to a ThresholdKey. For an N-of-M threshold key, this is a list of M signatures, at least N of which must be non-null. 
+ * This message is deprecated and succeeded by SignaturePair and SignatureMap messages. 
+ */
+message ThresholdSignature {
+    option deprecated = true;
+    SignatureList sigs = 2; // for an N-of-M threshold key, this is a list of M signatures, at least N of which must be non-null
+}
+
+/* The signatures corresponding to a KeyList of the same length.
+ * This message is deprecated and succeeded by SignaturePair and SignatureMap messages. 
+ */
+message SignatureList {
+    option deprecated = true;
+    repeated Signature sigs = 2; // each signature corresponds to a Key in the KeyList
+}
+
+/* The client may use any number of bytes from 0 to the whole length of the public key for pubKeyPrefix. 
+ * If 0 bytes is used, then it is assumed that only one public key is used to sign.
+ */
+message SignaturePair {
+    bytes pubKeyPrefix = 1;  // First few bytes of the public key
+    oneof signature {
+        bytes contract = 2; // smart contract virtual signature (always length zero)
+        bytes ed25519 = 3; // ed25519 signature
+        bytes RSA_3072 = 4; //RSA-3072 signature
+        bytes ECDSA_384 = 5; //ECDSA p-384 signature
+    }
+}
+
+/* A set of signatures corresponding to every unique public key used to sign a given transaction. 
+ * If one public key matches more than one prefixes on the signature map, the transaction containing the map will fail immediately with the response code KEY_PREFIX_MISMATCH.  
+ */
+message SignatureMap {
+    repeated SignaturePair sigPair = 1; 
+}
+
+/* The functionality provided by libonomy  */
+enum LibonomyFunctionality {
+    NONE = 0; // UNSPECIFIED - Need to keep first value as unspecified because first element is ignored and not parsed (0 is ignored by parser)
+    CryptoTransfer = 1; // crypto transfer
+    CryptoUpdate = 2; // crypto update account
+    CryptoDelete = 3; // crypto delete account
+    CryptoAddClaim = 4; // crypto add claim to the account
+    CryptoDeleteClaim = 5; // crypto delete claim to the account
+    ContractCall = 6; // Smart Contract Call
+    ContractCreate = 7; // Smart Contract Create Contract
+    ContractUpdate = 8; // Smart Contract update contract
+    FileCreate = 9; // File Operation create file
+    FileAppend = 10; // File Operation append file
+    FileUpdate = 11; // File Operation update file
+    FileDelete = 12; // File Operation delete file
+    CryptoGetAccountBalance = 13; // crypto get account balance
+    CryptoGetAccountRecords = 14; // crypto get account record
+    CryptoGetInfo = 15; // Crypto get info
+    ContractCallLocal = 16; // Smart Contract Call
+    ContractGetInfo = 17; // Smart Contract get info
+    ContractGetBytecode = 18; // Smart Contract, get the byte code
+    GetBySolidityID = 19; // Smart Contract, get by solidity ID
+    GetByKey = 20; // Smart Contract, get by key
+    CryptoGetClaim = 21; // Crypto get the claim
+    CryptoGetStakers = 22; // Crypto, get the stakers for the node
+    FileGetContents = 23; // File Operations get file contents
+    FileGetInfo = 24; // File Operations get the info of the file
+    TransactionGetRecord = 25; // Crypto get the transaction records
+    ContractGetRecords = 26; // Contract get the transaction records
+    CryptoCreate = 27; // crypto create account
+    SystemDelete = 28; // system delete file
+    SystemUndelete = 29; // system undelete file
+    ContractDelete =30; // delete contract
+}
+
+/* The different components used for fee calculation */
+
+message FeeComponents {
+    int64 min = 1; // The minimum fees that needs to be paid
+    int64 max = 2; // The maximum fees that can be submitted
+    int64 constant = 3; // A constant determined by the business to calculate the fees
+    int64 bpt = 4; // Bytes per transaction
+    int64 vpt = 5; // Verifications per transaction
+    int64 rbs = 6; // Ram byte seconds
+    int64 sbs = 7; // Storage byte seconds
+    int64 gas = 8; // Gas for the contract execution
+    int64 tv = 9; // Transaction value (crypto transfers amount, tv is in tiny bars divided by 1000, rounded down)
+    int64 bpr = 10; // Bytes per response
+    int64 sbpr = 11; // Storage bytes per response
+}
+
+/* The fees for a specific transaction or query based on the fee data. */
+message TransactionFeeSchedule {
+    LibonomyFunctionality libonomyFunctionality = 1; // Specific Transaction or Query
+    FeeData feeData = 2; // The fee information about the query/data
+}
+
+/* The total fees charged for a transaction. It contains three parts namely node data, network data and service data */
+message FeeData {
+    FeeComponents nodedata = 1; // Fee charged by Node for this functionality
+    FeeComponents networkdata = 2; // Fee charged for network operations by Libonomy
+    FeeComponents servicedata = 3; // Fee charged for providing service by Libonomy
+}
+
+/* The fee schedule for a specific libonomy functionality and the time period this fee schedule will expire  */
+message FeeSchedule {
+    repeated TransactionFeeSchedule transactionFeeSchedule = 1; // Contains multiple functionality specific fee schedule.
+    TimestampSeconds expiryTime = 2; // FeeSchedule expiry time
+}
+
+
+/* This contains two Fee Schedules with expiry timestamp. */
+message CurrentAndNextFeeSchedule {
+    FeeSchedule currentFeeSchedule = 1; // Contains current Fee Schedule
+    FeeSchedule nextFeeSchedule = 2; // Contains next Fee Schedule
+}
+
+/* The information about a node */
+message NodeAddress {
+    bytes ipAddress = 1; // The ip address of the Node with separator & octets
+    int32 portno = 2; // The port number of the grpc server for the node
+    bytes memo = 3; // The memo field of the node
+}
+
+/* Gives the node addresses in the address book */
+message NodeAddressBook {
+    repeated NodeAddress nodeAddress = 1; // Contains multiple Node Address for the network
+}
+message Duration {
+    int64 seconds = 1; // number of seconds
+}
+/* An exact date and time. This is the same data structure as the protobuf Timestamp.proto (see the comments in https://github.com/google/protobuf/blob/master/src/google/protobuf/timestamp.proto) */
+message Timestamp {
+    int64 seconds = 1; // Number of complete seconds since the start of the epoch
+    int32 nanos = 2; // Number of nanoseconds since the start of the last second
+}
+
+/* An exact date and time,  with a resolution of one second (no nanoseconds). */
+message TimestampSeconds {
+    int64 seconds = 1; // Number of complete seconds since the start of the epoch
+}
+
+/* Create a new account. After the account is created, the AccountID for it is in the receipt, or can be retrieved with a GetByKey query, or by asking for a Record of the transaction to be created, and retrieving that. The account can then automatically generate records for large transfers into it or out of it, which each last for 25 hours. Records are generated for any transfer that exceeds the thresholds given here. This account is charged cryptocurrency for each record generated, so the thresholds are useful for limiting Record generation to happen only for large transactions. The Key field is the key used to sign transactions for this account. If the account has receiverSigRequired set to true, then all cryptocurrency transfers must be signed by this account's key, both for transfers in and out. If it is false, then only transfers out have to be signed by it. When the account is created, the payer account is charged enough hbars so that the new account will not expire for the next autoRenewPeriod seconds. When it reaches the expiration time, the new account will then be automatically charged to renew for another autoRenewPeriod seconds. If it does not have enough hbars to renew for that long, then the remaining hbars are used to extend its expiration as long as possible. If it is has a zero balance when it expires, then it is deleted. This transaction must be signed by the payer account. If receiverSigRequired is false, then the transaction does not have to be signed by the keys in the keys field. If it is true, then it must be signed by them, in addition to the keys of the payer account.
+ *
+ * An entity (account, file, or smart contract instance) must be created in a particular realm. If the realmID is left null, then a new realm will be created with the given admin key. If a new realm has a null adminKey, then anyone can create/modify/delete entities in that realm. But if an admin key is given, then any transaction to create/modify/delete an entity in that realm must be signed by that key, though anyone can still call functions on smart contract instances that exist in that realm. A realm ceases to exist when everything within it has expired and no longer exists.
+ *
+ * The current API ignores shardID, realmID, and newRealmAdminKey, and creates everything in shard 0 and realm 0, with a null key. Future versions of the API will support multiple realms and multiple shards.
+ */
+message CryptoCreateTransactionBody {
+    Key key = 1; // The key that must sign each transfer out of the account. If receiverSigRequired is true, then it must also sign any transfer into the account.
+    uint64 initialBalance = 2; // The initial number of tinybars to put into the account
+    AccountID proxyAccountID = 3; // ID of the account to which this account is proxy staked. If proxyAccountID is null, or is an invalid account, or is an account that isn't a node, then this account is automatically proxy staked to a node chosen by the network, but without earning payments. If the proxyAccountID account refuses to accept proxy staking , or if it is not currently running a node, then it will behave as if proxyAccountID was null.
+    uint64 sendRecordThreshold = 6; // The threshold amount (in tinybars) for which an account record is created for any send/withdraw transaction
+    uint64 receiveRecordThreshold = 7; // The threshold amount (in tinybars) for which an account record is created for any receive/deposit transaction
+    bool receiverSigRequired = 8; // If true, this account's key must sign any transaction depositing into this account (in addition to all withdrawals)
+    Duration autoRenewPeriod = 9; // The account is charged to extend its expiration date every this many seconds. If it doesn't have enough balance, it extends as long as possible. If it is empty when it expires, then it is deleted.
+    ShardID shardID = 10; // The shard in which this account is created
+    RealmID realmID = 11; // The realm in which this account is created (leave this null to create a new realm)
+    Key newRealmAdminKey = 12; // If realmID is null, then this the admin key for the new realm that will be created
+}
+/* Change properties for the given account. Any null field is ignored (left unchanged). This transaction must be signed by the existing key for this account. If the transaction is changing the key field, then the transaction must be signed by both the old key (from before the change) and the new key. The old key must sign for security. The new key must sign as a safeguard to avoid accidentally changing to an invalid key, and then having no way to recover. When extending the expiration date, the cost is affected by the size of the list of attached claims, and of the keys associated with the claims and the account. */
+message CryptoUpdateTransactionBody {
+    AccountID accountIDToUpdate = 2; // The account ID which is being updated in this transaction
+    Key key = 3; // The new key
+    AccountID proxyAccountID = 4; // ID of the account to which this account is proxy staked. If proxyAccountID is null, or is an invalid account, or is an account that isn't a node, then this account is automatically proxy staked to a node chosen by the network, but without earning payments. If the proxyAccountID account refuses to accept proxy staking , or if it is not currently running a node, then it will behave as if proxyAccountID was null.
+    int32 proxyFraction = 5 [deprecated = true]; // [Deprecated]. payments earned from proxy staking are shared between the node and this account, with proxyFraction / 10000 going to this account
+    oneof sendRecordThresholdField {
+        uint64 sendRecordThreshold = 6 [deprecated = true]; // [Deprecated]. The new threshold amount (in tinybars) for which an account record is created for any send/withdraw transaction
+        google.protobuf.UInt64Value sendRecordThresholdWrapper = 11; // The new threshold amount (in tinybars) for which an account record is created for any send/withdraw transaction
+    }
+    oneof receiveRecordThresholdField {
+        uint64 receiveRecordThreshold = 7 [deprecated = true]; // [Deprecated]. The new threshold amount (in tinybars) for which an account record is created for any receive/deposit transaction.
+        google.protobuf.UInt64Value receiveRecordThresholdWrapper = 12; // The new threshold amount (in tinybars) for which an account record is created for any receive/deposit transaction.
+    }
+    Duration autoRenewPeriod = 8; // The duration in which it will automatically extend the expiration period. If it doesn't have enough balance, it extends as long as possible. If it is empty when it expires, then it is deleted.
+    Timestamp expirationTime = 9; // The new expiration time to extend to (ignored if equal to or before the current one)
+    oneof receiverSigRequiredField {
+        bool receiverSigRequired = 10 [deprecated = true];  // [Deprecated] Do NOT use this field to set a false value because the server cannot distinguish from the default value. Use receiverSigRequiredWrapper field for this purpose.
+        google.protobuf.BoolValue receiverSigRequiredWrapper = 13; // If true, this account's key must sign any transaction depositing into this account (in addition to all withdrawals)
+    }
+}
+/* An account, and the amount that it sends or receives during a cryptocurrency transfer. */
+message AccountAmount {
+    AccountID accountID = 1; // The Account ID that sends or receives cryptocurrency
+    sint64 amount = 2; // The amount of tinybars that the account sends(negative) or receives(positive)
+}
+
+/* A list of accounts and amounts to transfer out of each account (negative) or into it (positive). */
+message TransferList {
+    repeated AccountAmount accountAmounts = 1; // Multiple list of AccountAmount pairs, each of which has an account and an amount to transfer into it (positive) or out of it (negative)
+}
+
+/* Transfer cryptocurrency from some accounts to other accounts. The accounts list can contain up to 10 accounts. The amounts list must be the same length as the accounts list. Each negative amount is withdrawn from the corresponding account (a sender), and each positive one is added to the corresponding account (a receiver). The amounts list must sum to zero. Each amount is a number of tinyBars (there are 100,000,000 tinyBars in one Hbar). If any sender account fails to have sufficient hbars to do the withdrawal, then the entire transaction fails, and none of those transfers occur, though the transaction fee is still charged. This transaction must be signed by the keys for all the sending accounts, and for any receiving accounts that have receiverSigRequired == true. The signatures are in the same order as the accounts, skipping those accounts that don't need a signature. */
+message CryptoTransferTransactionBody {
+    TransferList transfers = 1; // Accounts and amounts to transfer
+}
+
+/* A single transaction. All transaction types are possible here. */
+message TransactionBody {
+    TransactionID transactionID = 1; // The ID for this transaction, which includes the payer's account (the account paying the transaction fee). If two transactions have the same transactionID, they won't both have an effect
+    AccountID nodeAccountID = 2; // The account of the node that submits the client's transaction to the network
+    uint64 transactionFee = 3; // The fee the client pays, which is split between the network and the node
+    Duration transactionValidDuration = 4; //The transaction is invalid if consensusTimestamp > transactionID.transactionValidStart + transactionValidDuration
+    bool generateRecord = 5; // Should a record of this transaction be generated? (A receipt is always generated, but the record is optional)
+    string memo = 6; // Any notes or descriptions that should be put into the record (max length 100)
+    oneof data {
+        // ContractCallTransactionBody contractCall = 7; // Contains the call a function of a contract instance
+        // ContractCreateTransactionBody contractCreateInstance = 8; // Contains the create data a contract instance
+        // ContractUpdateTransactionBody contractUpdateInstance = 9; // Contains contract modify info such as expiration date for a contract instance
+		// ContractDeleteTransactionBody contractDeleteInstance = 22;//Delete contract and transfer remaining balance into specified account
+
+        // CryptoAddClaimTransactionBody cryptoAddClaim = 10; // Attach a new claim to an account
+        CryptoCreateTransactionBody cryptoCreateAccount = 11; // Create a new cryptocurrency account
+        // CryptoDeleteTransactionBody cryptoDelete = 12; // Delete a cryptocurrency account (mark as deleted, and transfer hbars out)
+        // CryptoDeleteClaimTransactionBody cryptoDeleteClaim = 13; // Remove a claim from an account
+        CryptoTransferTransactionBody cryptoTransfer = 14; // Transfer amount between accounts
+        CryptoUpdateTransactionBody cryptoUpdateAccount = 15; // Modify information such as the expiration date for an account
+
+        // FileAppendTransactionBody fileAppend = 16; // Add bytes to the end of the contents of a file
+        // FileCreateTransactionBody fileCreate = 17; // Create a new file
+        // FileDeleteTransactionBody fileDelete = 18; // Delete a file (remove contents and mark as deleted until it expires)
+        // FileUpdateTransactionBody fileUpdate = 19; // Modify information such as the expiration date for a file
+        // SystemDeleteTransactionBody systemDelete = 20; // Libonomy multisig system deletes a file or smart contract
+        // SystemUndeleteTransactionBody systemUndelete = 21; //To undelete an entity deleted by SystemDelete
+
+    }
+}
+/* A single signed transaction, including all its signatures. The SignatureList will have a Signature for each Key in the transaction, either explicit or implicit, in the order that they appear in the transaction. For example, a CryptoTransfer will first have a Signature corresponding to the Key for the paying account, followed by a Signature corresponding to the Key for each account that is sending or receiving cryptocurrency in the transfer. Each Transaction should not have more than 50 levels. 
+ * The SignatureList field is deprecated and succeeded by SignatureMap.
+ */
+message Transaction {
+	oneof bodyData {
+		TransactionBody body = 1 [deprecated = true]; // the body of the transaction, which needs to be signed
+	    bytes  bodyBytes = 4; // TransactionBody serialized into bytes , which needs to be signed
+    }
+    SignatureList sigs = 2 [deprecated = true]; // The signatures on the body, to authorize the transaction; deprecated and to be succeeded by SignatureMap field
+    SignatureMap sigMap = 3; // The signatures on the body with the new format, to authorize the transaction
+}
